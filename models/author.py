@@ -1,9 +1,12 @@
-from database.connection import CURSOR, CONN
+from models.conn import CONN, CURSOR
 
 class Author:
     def __init__(self, id=None, name=None):
         self.id = id
         self.name = name
+
+    def __repr__(self):
+        return f'<Author {self.name}>'
 
     @property
     def id(self):
@@ -11,7 +14,7 @@ class Author:
 
     @id.setter
     def id(self, value):
-        if not isinstance(value, int) and value is not None:
+        if not isinstance(value, int):
             raise TypeError("Id must be of type int")
         self._id = value
 
@@ -21,24 +24,51 @@ class Author:
 
     @name.setter
     def name(self, value):
-        if not isinstance(value, str) or len(value) == 0:
+        if not isinstance(value, str) or len(value) <= 0:
             raise ValueError("Name must be a non-empty string")
         self._name = value
 
+    def articles(self):
+        from models.article import Article
+        sql = """
+            SELECT articles.id, articles.title, articles.content, articles.author_id, articles.magazine_id
+            FROM articles
+            INNER JOIN authors ON authors.id = articles.author_id
+            WHERE authors.id = ?
+        """
+        CURSOR.execute(sql, (self.id,))
+        rows = CURSOR.fetchall()
+        return [Article(row[0], row[1], row[2], row[3], row[4]) for row in rows]
+
+    def magazines(self):
+        from models.magazine import Magazine
+        sql = """
+            SELECT DISTINCT magazines.id, magazines.name, magazines.category
+            FROM magazines
+            INNER JOIN articles ON magazines.id = articles.magazine_id
+            WHERE articles.author_id = ?
+        """
+        CURSOR.execute(sql, (self.id,))
+        rows = CURSOR.fetchall()
+        return [Magazine(row[0], row[1], row[2]) for row in rows]
+
     def save(self):
         if self.id is None:
-            CURSOR.execute("INSERT INTO authors (name) VALUES (?)", (self.name,))
+            sql = """
+                INSERT INTO authors (name)
+                VALUES (?)
+            """
+            CURSOR.execute(sql, (self.name,))
             CONN.commit()
             self.id = CURSOR.lastrowid
         else:
-            CURSOR.execute("UPDATE authors SET name = ? WHERE id = ?", (self.name, self.id))
+            sql = """
+                UPDATE authors
+                SET name = ?
+                WHERE id = ?
+            """
+            CURSOR.execute(sql, (self.name, self.id))
             CONN.commit()
-
-    def delete(self):
-        if self.id is not None:
-            CURSOR.execute("DELETE FROM authors WHERE id = ?", (self.id,))
-            CONN.commit()
-            self.id = None
 
     @classmethod
     def instance_from_db(cls, row):
@@ -46,7 +76,15 @@ class Author:
 
     @classmethod
     def get_all(cls):
-        CURSOR.execute("SELECT * FROM authors")
-        rows = CURSOR.fetchall()
+        sql = """
+            SELECT *
+            FROM authors
+        """
+        rows = CURSOR.execute(sql).fetchall()
         return [cls.instance_from_db(row) for row in rows]
 
+# Example usage:
+# author = Author(name="John Doe")
+# author.save()
+# print(author.articles())
+# print(author.magazines())
